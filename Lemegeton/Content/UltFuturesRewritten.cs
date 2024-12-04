@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using static FFXIVClientStructs.FFXIV.Client.Game.Character.VfxContainer;
 using static Lemegeton.Content.Overlays;
 using static Lemegeton.Content.Overlays.DotTracker;
@@ -26,22 +27,34 @@ namespace Lemegeton.Content
 
         private const int AbilityBoundOfFaith = 40165;
         private const int AbilityQuadrupleSlap = 40191;
+        private const int AbilityHellsJudgment = 40265;
+        private const int AbilityMaterialization = 40246;
         
         private const int StatusPrey = 1051;
         private const int StatusChains = 4157;
         private const int StatusWeightOfLight = 4159;
+        private const int StatusWyrmfang = 3264;
+        private const int StatusWyrmclaw = 3263;
+        private const int StatusUnholyDarkness = 2454;
+        private const int StatusDarkWater = 2461;
+        private const int StatusDarkBlizzard = 2462;
+        private const int StatusDarkAero = 2463;
+        private const int StatusDarkEruption = 2460;
 
         private const int TetherFire = 249;
         private const int TetherLightning = 287;
 
         private FallOfFaithAM _fallFaithAm;
         private LightRampantAM _lightRampantAm;
+        private CrystalizeTimeAM _crystalizeTimeAm;
 
         private enum PhaseEnum
         {
             P1_Start,
             P1_Faith,
             P2_Shiva,
+            P3_Gaia,
+            P4_GaiaShiva,
         }
 
         private PhaseEnum _CurrentPhase = PhaseEnum.P1_Start;
@@ -60,6 +73,156 @@ namespace Lemegeton.Content
                 }
             }
         }
+        
+        #region CrystalizeTimeAM
+
+        public class CrystalizeTimeAM : Automarker
+        {
+            [AttributeOrderNumber(1000)]
+            public AutomarkerSigns Signs { get; set; }
+            
+            [AttributeOrderNumber(2000)]
+            public AutomarkerPrio Prio { get; set; }
+            
+            [DebugOption]
+            [AttributeOrderNumber(2500)]
+            public AutomarkerTiming Timing { get; set; }
+            
+            [DebugOption]
+            [AttributeOrderNumber(3000)]
+            public System.Action Test { get; set; }
+            
+            private List<IGameObject> _redgang = new List<IGameObject>();
+            private List<IGameObject> _bluegang = new List<IGameObject>();
+            private List<IGameObject> _aerogang = new List<IGameObject>();
+            private List<IGameObject> _icegang = new List<IGameObject>();
+            private List<IGameObject> _eruptiongang = new List<IGameObject>();
+            private bool _fired = false;
+
+            public CrystalizeTimeAM(State state) : base(state)
+            {
+                Enabled = false;
+                Signs = new AutomarkerSigns();
+                Prio = new AutomarkerPrio();
+                Prio.Priority = AutomarkerPrio.PrioTypeEnum.CongaX;
+                Timing = new AutomarkerTiming() { TimingType = AutomarkerTiming.TimingTypeEnum.Inherit, Parent = state.cfg.DefaultAutomarkerTiming };
+                Signs.SetRole("RedIce1", AutomarkerSigns.SignEnum.Ignore1, false);
+                Signs.SetRole("RedIce2", AutomarkerSigns.SignEnum.Ignore2, false);
+                Signs.SetRole("RedAero1", AutomarkerSigns.SignEnum.Bind1, false);
+                Signs.SetRole("RedAero2", AutomarkerSigns.SignEnum.Bind2, false);
+                Signs.SetRole("Eruption", AutomarkerSigns.SignEnum.Attack1, false);
+                Signs.SetRole("Blue1", AutomarkerSigns.SignEnum.Attack2, false);
+                Signs.SetRole("Blue2", AutomarkerSigns.SignEnum.Attack3, false);
+                Signs.SetRole("Blue3", AutomarkerSigns.SignEnum.Attack4, false);
+                Test = new System.Action(() => Signs.TestFunctionality(state, Prio, Timing, SelfMarkOnly, AsSoftmarker));
+            }
+            
+            public override void Reset()
+            {
+                Log(State.LogLevelEnum.Debug, null, "Reset");
+                _fired = false;
+                _redgang.Clear();
+                _bluegang.Clear();
+                _aerogang.Clear();
+                _icegang.Clear();
+                _eruptiongang.Clear();
+            }
+
+            internal void FeedStatus(uint statusId, uint actor, bool gained)
+            {
+                if (Active == false)
+                {
+                    return;
+                }
+
+                if (gained == false)
+                {
+                    if (_fired == true)
+                    {
+                        Log(State.LogLevelEnum.Debug, null, "Clearing automarkers");
+                        _state.ClearAutoMarkers();
+                        Reset();
+                    }
+                    return;
+                }
+
+                IGameObject go = _state.GetActorById(actor);
+                switch (statusId)
+                {
+                    case StatusWyrmclaw:
+                        Log(State.LogLevelEnum.Debug, null, "Registered red on {0}", go);
+                        _redgang.Add(go);
+                        break;
+                    case StatusWyrmfang:
+                        Log(State.LogLevelEnum.Debug, null, "Registered blue on {0}", go);
+                        _bluegang.Add(go);
+                        break;
+                    case StatusDarkAero:
+                        Log(State.LogLevelEnum.Debug, null, "Registered aero on {0}", go);
+                        _aerogang.Add(go);
+                        break;
+                    case StatusDarkEruption:
+                        Log(State.LogLevelEnum.Debug, null, "Registered eruption on {0}", go);
+                        _eruptiongang.Add(go);
+                        break;
+                    case StatusDarkBlizzard:
+                        Log(State.LogLevelEnum.Debug, null, "Registered ice on {0}", go);
+                        _icegang.Add(go);
+                        break;
+                }
+                //For this mech we will have 4 red, 4 blue, 2 aeros, 3 ice, 1 eruption
+                if (_redgang.Count != 4)
+                {
+                    return;
+                }
+                if (_bluegang.Count != 4)
+                {
+                    return;
+                }
+                if (_aerogang.Count != 2)
+                {
+                    return;
+                }
+                if (_icegang.Count != 3)
+                {
+                    return;
+                }
+                if (_eruptiongang.Count != 1)
+                {
+                    return;
+                }
+                Log(State.LogLevelEnum.Debug, null, "Ready for markers");
+                Party pty = _state.GetPartyMembers();
+                List<Party.PartyMember> _redIceGo = new List<Party.PartyMember>(
+                    from ix in pty.Members where _redgang.Contains(ix.GameObject) == true && _icegang.Contains(ix.GameObject) == true select ix
+                );
+                List<Party.PartyMember> _redAeroGo = new List<Party.PartyMember>(
+                    from ix in pty.Members where _redgang.Contains(ix.GameObject) == true && _aerogang.Contains(ix.GameObject) == true select ix
+                );
+                List<Party.PartyMember> _blueGo = new List<Party.PartyMember>(
+                    from ix in pty.Members where _bluegang.Contains(ix.GameObject) == true && _eruptiongang.Contains(ix.GameObject) == false select ix
+                );
+                Prio.SortByPriority(_redIceGo);
+                Log(State.LogLevelEnum.Debug, null, "RedIce prio: {0}", String.Join(",", from cx in _redIceGo select cx.Name));
+                Prio.SortByPriority(_redAeroGo);
+                Log(State.LogLevelEnum.Debug, null, "RedAero prio: {0}", String.Join(",", from cx in _redAeroGo select cx.Name));
+                Prio.SortByPriority(_blueGo);
+                Log(State.LogLevelEnum.Debug, null, "Blue prio: {0}", String.Join(",", from cx in _blueGo select cx.Name));
+                AutomarkerPayload ap = new AutomarkerPayload(_state, SelfMarkOnly, AsSoftmarker);
+                ap.Assign(Signs.Roles["RedIce1"], _redIceGo[0].GameObject);
+                ap.Assign(Signs.Roles["RedIce2"], _redIceGo[1].GameObject);
+                ap.Assign(Signs.Roles["RedAero1"], _redAeroGo[0].GameObject);
+                ap.Assign(Signs.Roles["RedAero2"], _redAeroGo[1].GameObject);
+                ap.Assign(Signs.Roles["Eruption"], _eruptiongang[0]);
+                ap.Assign(Signs.Roles["Blue1"], _blueGo[0].GameObject);
+                ap.Assign(Signs.Roles["Blue2"], _blueGo[1].GameObject);
+                ap.Assign(Signs.Roles["Blue3"], _blueGo[2].GameObject);
+                _state.ExecuteAutomarkers(ap, Timing);
+                _fired = true;
+            }
+        }
+        
+        #endregion
 
         #region FallOfFaithAM
 
@@ -492,6 +655,12 @@ namespace Lemegeton.Content
                 case AbilityQuadrupleSlap:
                     CurrentPhase = PhaseEnum.P2_Shiva;
                     break;
+                case AbilityHellsJudgment:
+                    CurrentPhase = PhaseEnum.P3_Gaia;
+                    break;
+                case AbilityMaterialization:
+                    CurrentPhase = PhaseEnum.P4_GaiaShiva;
+                    break;
             }
         }
 
@@ -596,6 +765,7 @@ namespace Lemegeton.Content
                 Log(State.LogLevelEnum.Info, null, "Content available");                
                 _fallFaithAm = (FallOfFaithAM)Items["FallOfFaithAM"];
                 _lightRampantAm = (LightRampantAM)Items["LightRampantAM"];
+                _crystalizeTimeAm = (CrystalizeTimeAM)Items["CrystalizeTimeAM"];
                 _state.OnCombatChange += OnCombatChange;
                 LogItems();
             }
